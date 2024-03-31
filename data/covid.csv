@@ -1,0 +1,15 @@
+fever,cough,breathing_issues,infected
+no0,no1,no2,no
+yes0,yes1,yes2,yes
+yes0,yes1,no2,no
+yes0,no1,yes2,yes
+yes0,yes1,yes2,yes
+no0,yes1,no2,no
+yes0,no1,yes2,yes
+yes0,no1,yes2,yes
+no0,yes1,yes2,yes
+yes0,yes1,no2,yes
+no0,yes1,no2,no
+no0,yes1,yes2,yes
+no0,yes1,yes2,no
+yes0,yes1,no2,no

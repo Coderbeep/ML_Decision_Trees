@@ -1,0 +1,15 @@
+Risk,History,Debt,Collateral,income
+high,bad,high,none,$0-15K
+high,unk,high,none,$15-35K
+mod,unk,low,none,$15-35K
+high,unk,low,none,$0-15K
+low,unk,low,none,>$35K
+low,unk,low,adequate,>$35K
+high,bad,low,none,$0-15K
+mod,bad,low,adequate,>$35K
+low,good,low,none,>$35K
+low,good,high,adequate,>$35K
+high,good,high,none,$0-15K
+mod,good,high,none,$15-35K
+low,good,high,none,>$35K
+high,bad,high,none,$15-35K
