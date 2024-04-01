@@ -1,12 +1,21 @@
 import pandas as pd
 import numpy as np
-
-class AttributeSelectionStrategy():
-    def calculate(self, data, attributes):
-        raise NotImplementedError
+""" The AttributeSelectionStrategy interface.
     
+    Methods:
+        calculate: Calculate the best attribute to split the data on
+        
+    Available strategies:
+        - InformationGain
+        - InformationGainRatio
+        - GiniIndex
+"""
+class AttributeSelectionStrategy():
+    def calculate(self, data: pd.DataFrame, attributes: set) -> tuple[str, float]:
+        raise NotImplementedError
+
 class InformationGain(AttributeSelectionStrategy):
-    def calculate(self, data, attributes):
+    def calculate(self, data: pd.DataFrame, attributes: set) -> tuple[str, float]:
         best_attribute = None
         best_inf_gain = -1
         
@@ -45,7 +54,7 @@ class InformationGain(AttributeSelectionStrategy):
         attribute_entropy = -(attribute_probabilities * np.log2(attribute_probabilities)).sum(axis=1)
         split_entropy = (attribute_totals / total_rows) * attribute_entropy
         return split_entropy.sum()
-    
+   
 class InformationGainRatio(AttributeSelectionStrategy):
     def calculate(self, data, attributes):
         best_attribute = None
