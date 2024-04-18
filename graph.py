@@ -1,4 +1,5 @@
 from graphviz import Digraph
+import uuid
 
     # Issues That Affect ID3
     # Bad data: Two identical attributes given different results.
@@ -59,3 +60,120 @@ class Graph:
                     if current is not None:
                         graph.edge(current, node_label, label=key)  # Create edge from current to node_label
         return graph
+
+class Node():
+    def __init__(self, parent = None, data = None):
+        self.uuid = str(uuid.uuid4())
+        self.parent: Node = None
+        self.data = data
+        
+class Leaf(Node):
+    def __init__(self, label, positive=0, negative=0, parent=None, data = None):
+        super().__init__(parent, data) 
+        self.label = label 
+        self.value = None
+        
+        self.positive: int = positive
+        self.negative: int = negative
+        
+    def __str__(self, level=0):
+        return f"{self.value} {self.label}"
+
+    def __repr__(self):
+        return f"{self.label}"
+    
+class InternalNode(Node):
+    def __init__(self, attribute, parent=None, data = None):
+        super().__init__(parent, data) 
+        self.attribute = attribute
+        self.value = None
+        self.children = []
+        # print(f"Creating node: {self.uuid}")
+
+    def add_child(self, child):
+        child.parent = self
+        self.children.append(child)
+
+    def __str__(self, level=0):
+        return f"{self.attribute}, {self.value}, {self.children}"
+
+    def __repr__(self):
+        return f"{self.attribute}: {self.value} -> {self.children}"
+
+class Tree:
+    def __init__(self, root=None):
+        self.root = root
+        self.leaves = None
+
+    def get_internal_nodes(self) -> list[Node]:
+        nodes = list()
+        def traverse(node):
+            if isinstance(node, InternalNode):
+                nodes.append(node)
+                for child in node.children:
+                    traverse(child)
+        traverse(self.root)
+        return nodes
+    
+    def get_number_of_nodes(self):
+        return len(self.get_internal_nodes()) + self.count_leaves()
+
+    def traverse_dfs(self, node=None):
+        if node is None:
+            node = self.root
+        if isinstance(node, InternalNode):
+            for child in node.children:
+                self.traverse_dfs(child)
+
+    def traverse_bfs(self):
+        if self.root is None:
+            return
+
+        queue = [self.root]
+        while queue:
+            node = queue.pop(0)
+            if isinstance(node, InternalNode):
+                for child in node.children:
+                    queue.append(child)
+    
+    def count_leaves(self, node=None):
+        if node is None:
+            node = self.root
+
+        if isinstance(node, Leaf):
+            return 1
+
+        count = 0
+        for child in node.children:
+            count += self.count_leaves(child)
+        return count
+    
+    def visualize(self, filename="result"):
+        dot = Digraph(comment='Decision Tree')
+        
+        def add_nodes_edges(node, dot=None):
+            if dot is None:
+                dot = Digraph()
+                dot.node(name=str(node.attribute), label=str(node.attribute))
+                        
+            if isinstance(node, InternalNode):
+                dot.node(name=node.uuid, label=str(node.attribute), shape='box')
+                for child in node.children:
+                    if isinstance(child, Leaf):
+                        dot.node(name=child.uuid, label=str(child.label) + f" {child.positive}/{child.negative}")
+                        dot.edge(str(node.uuid), str(child.uuid), label=str(child.value))
+                        # print(f"Creating leaf: {str(child.label)}")
+                    if isinstance(child, InternalNode):
+                        dot.node(name=child.uuid, label=str(child.attribute), shape='box')
+                        dot.edge(str(node.uuid), str(child.uuid), label=str(child.value))
+                        # print(f"Creating node: {str(child.attribute)}")
+                    add_nodes_edges(child, dot)
+            # the case for graph being only the root
+            if isinstance(node, Leaf):
+                dot.node(name=node.uuid, label=str(node.label) + f" {node.positive}/{node.negative}")
+            
+            return dot
+
+        dot = add_nodes_edges(self.root, dot)
+        dot.render(filename, format='png', cleanup=True)
+

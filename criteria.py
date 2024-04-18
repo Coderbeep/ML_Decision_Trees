@@ -15,18 +15,97 @@ class AttributeSelectionStrategy():
         raise NotImplementedError
 
 class InformationGain(AttributeSelectionStrategy):
+    # def calculate(self, data: pd.DataFrame, attributes: set) -> tuple[str, float]:
+    #     best_attribute = None
+    #     best_inf_gain = 0
+        
+    #     initial_entropy = self._get_entropy(data)
+    #     for attribute in attributes:
+    #         information_gain = initial_entropy - self._get_split_entropy(data, attribute)
+    #         if information_gain > best_inf_gain:
+    #             best_inf_gain = information_gain
+    #             best_attribute = attribute
+            
+    #     return best_attribute, best_inf_gain
+    
     def calculate(self, data: pd.DataFrame, attributes: set) -> tuple[str, float]:
         best_attribute = None
-        best_inf_gain = -1
+        best_inf_gain = 0
+        best_threshold = None
+        
+        for attribute in attributes:
+            inf_gain = 0
+            threshold = None
+            
+            if data[attribute].dtype == 'float64' or data[attribute].dtype == 'int64':
+                cont_best_attribute, cont_inf_gain, cont_threshold = self._calculate_continuous_attribute(data, attribute)
+                inf_gain = cont_inf_gain
+                threshold = cont_threshold
+            else:
+                dis_best_attribute, dis_best_inf_gain, _ = self._calculate_discrete_attribute(data, attribute)
+                inf_gain = dis_best_inf_gain
+                threshold = None
+                
+            if inf_gain > best_inf_gain:
+                best_inf_gain = inf_gain
+                best_attribute = attribute
+                best_threshold = threshold
+                
+        if data[best_attribute].dtype == 'float64' or data[best_attribute].dtype == 'int64':
+            return best_attribute, best_inf_gain, best_threshold
+
+        return best_attribute, best_inf_gain, None
+    
+    # Calculate helper which checks the datatype of the attribute
+    # if float or integer, then calculate the best possible threshold
+    # if not, then calculate the best possible split
+    
+    def _calculate_discrete_attribute(self, data: pd.DataFrame, attribute_name: str):
+        best_attribute = None
+        best_inf_gain = 0
         
         initial_entropy = self._get_entropy(data)
-        for attribute in attributes:
-            information_gain = initial_entropy - self._get_split_entropy(data, attribute)
+        information_gain = initial_entropy - self._get_split_entropy(data, attribute_name)
+        if information_gain > best_inf_gain:
+            best_inf_gain = information_gain
+            best_attribute = attribute_name
+        
+        return best_attribute, best_inf_gain, None
+    
+    
+    def _calculate_continuous_attribute(self, data: pd.DataFrame, attribute_name: str):
+        best_threshold = None
+        best_inf_gain = 0
+        sorted_data = data.sort_values(by=attribute_name).reset_index(drop=True)
+        n_instances = sorted_data.shape[0]
+        
+        overall_entropy = self._get_entropy(data)
+        where_labels_change = self._get_places_where_labels_change(data, attribute_name)
+        for i in range(where_labels_change.size):
+            data_left = sorted_data.iloc[:where_labels_change[i]]
+            data_right = sorted_data.iloc[where_labels_change[i]:]
+            
+            entropy_left = (data_left.shape[0] / n_instances) * self._get_entropy(data_left)
+            entropy_right = (data_right.shape[0] / n_instances) * self._get_entropy(data_right)
+
+            information_gain = overall_entropy - (entropy_left + entropy_right)
             if information_gain > best_inf_gain:
                 best_inf_gain = information_gain
-                best_attribute = attribute
-                
-        return best_attribute, best_inf_gain
+                best_threshold = (sorted_data.iloc[where_labels_change[i]][attribute_name] + sorted_data.iloc[where_labels_change[i] - 1][attribute_name]) / 2
+            # print(f"Threshold: {(sorted_data.iloc[where_labels_change[i]][attribute_name] + sorted_data.iloc[where_labels_change[i] - 1][attribute_name]) / 2}")
+        return attribute_name, best_inf_gain, best_threshold
+    
+    """ Returns the indexes where the labels change in the sorted (ascending) order 
+        according to the attribute_name column. 
+        
+        The label is assumed to be the last column in the DataFrame."""
+    def _get_places_where_labels_change(self, data: pd.DataFrame, attribute_name: str):
+        sorted_data = data.sort_values(by=attribute_name)
+        sorted_data.reset_index(drop=True, inplace=True)
+        where_data_changed = (sorted_data.iloc[:, -1] != sorted_data.iloc[:, -1].shift())
+        where_data_changed[0] = False
+        
+        return where_data_changed[where_data_changed == True].index.values
 
     def _get_entropy(self, data: pd.DataFrame):
         total_rows = len(data)
@@ -70,7 +149,6 @@ class InformationGainRatio(AttributeSelectionStrategy):
             if information_gain_ratio > best_inf_gain_ratio:
                 best_inf_gain_ratio = information_gain_ratio
                 best_attribute = attribute
-                
         return best_attribute, best_inf_gain_ratio
 
     def _get_entropy_column(self, column: pd.Series):

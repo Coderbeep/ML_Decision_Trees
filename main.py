@@ -1,7 +1,18 @@
 import pandas as pd
-
+from pruner import DecisionTreePruner
 from criteria import InformationGain, InformationGainRatio, GiniIndex, AttributeSelectionStrategy
-from graph import Graph
+from graph import Graph, Tree, InternalNode, Leaf, Node
+
+# TODO: labels as another pd series, passed as additional argument 
+#       to the algorithm class
+# TODO: refactor the ID3 Algorithm to handle the positive and negative labels inside
+#       the node class
+# TODO: backtracking in ID3 Algorithm 
+# TODO: C4.5 Algorithm
+#       - Discrete and continuous attributes handling
+#       - Missing values handling  
+#           - Ignore the instance
+#           - Take into account only a fraction of the instance
 
 criteria = {
     "inf_gain": InformationGain,
@@ -61,8 +72,7 @@ class ID3Algorithm(TreeAlgorithm):
     def __init__(self, data: pd.DataFrame, criterion = "inf_gain", labels_column: int = -1):
         super().__init__(data, criterion, labels_column)
 
-    def _algorithm_id3(self, data, attributes, labels_column, tree=None, used_attributes=None):
-        ### The stopping conditions ###
+    def _algorithm_id3(self, data, attributes, labels_column, used_attributes=None):
         if not used_attributes:
             used_attributes = set()
 
@@ -70,32 +80,35 @@ class ID3Algorithm(TreeAlgorithm):
             return None
 
         if len(labels_column.unique()) == 1:
-            return labels_column.unique()[0]
+            return Leaf(label=labels_column.iloc[0])
 
         if len(attributes.columns) == 0:
-            return labels_column.value_counts().idxmax()
+            label_counts = labels_column.value_counts()
+            max_count = label_counts.max()
+            if len(label_counts[label_counts == max_count]) > 1:
+                print("The dataset is inconsistent. Check records: " + str(data.index.tolist()))
+                exit()
+            return Leaf(label=label_counts.idxmax())
 
         available_attributes = set(attributes.columns) - used_attributes
         best_attribute, best_measure_value = self.criterion.calculate(data, available_attributes)
         if not best_attribute:
-            return labels_column.value_counts().idxmax()
+            return Leaf(label=labels_column.value_counts().idxmax())
                 
-        if tree is None:
-            tree = {}
-        
-        tree[best_attribute] = {}
+        node = InternalNode(attribute=best_attribute)
         for value in data[best_attribute].unique():
             ids = data.index[data[best_attribute] == value].tolist()
             sub_data = data.loc[ids, :]
-            labels_column = sub_data.iloc[:, -1]
+            sub_labels_column = sub_data.iloc[:, -1]
             sub_attributes = attributes.drop(best_attribute, axis=1)
             updated_used_attributes = used_attributes.union({best_attribute})
-            subtree = self._algorithm_id3(sub_data, sub_attributes, labels_column, tree={}, used_attributes=updated_used_attributes)        
-            tree[best_attribute][value] = subtree
-        return tree
+            child_node = self._algorithm_id3(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes)
+            child_node.value = value
+            node.add_child(child_node)
+        return node
     
     def execute(self):
-        self.tree = self._algorithm_id3(self.data, self.attributes, self.labels_column)
+        self.tree = Tree(self._algorithm_id3(self.data, self.attributes, self.labels_column))
         return self.tree
 
     def render_graph(self):
@@ -106,73 +119,6 @@ class ID3Algorithm(TreeAlgorithm):
         description = "ID3 Algorithm\n"
         description += "Unique labels: {}\n".format(str(self.unique_labels))
         description += "Attributes: {}\n".format(str(self.attribute_names))
-
-
-class LeafNode():
-    def __init__(self, label):
-        self.label = label 
-        self.value = None
-
-    def __str__(self, level=0):
-        return f"{self.value} {self.label}"
-
-    def __repr__(self):
-        return f"{self.label}"
-    
-class InternalNode():
-    def __init__(self, attribute):
-        self.attribute = attribute
-        self.value = None
-        self.children = []
-        
-    def add_child(self, child):
-        self.children.append(child)
-
-    def __str__(self, level=0):
-        return f"{self.attribute}, {self.value}, {self.children}"
-
-    def __repr__(self):
-        return f"{self.attribute}: {self.value} -> {self.children}"
-
-class Tree:
-    def __init__(self, root=None):
-        self.root = root
-        self.leaves = None
-
-    def traverse_dfs(self, node=None):
-        if node is None:
-            node = self.root
-        print("Here -> ", node)
-        if isinstance(node, InternalNode):
-            for child in node.children:
-                self.traverse_dfs(child)
-
-    def traverse_bfs(self):
-        if self.root is None:
-            return
-
-        queue = [self.root]
-        while queue:
-            node = queue.pop(0)
-            print("Here -> ", node)
-            if isinstance(node, InternalNode):
-                for child in node.children:
-                    queue.append(child)
-    
-    def count_leaves(self, node=None):
-        if self.leaves is not None:
-            return self.leaves
-        
-        if node is None:
-            node = self.root
-
-        if isinstance(node, LeafNode):
-            return 1
-
-        count = 0
-        for child in node.children:
-            count += self.count_leaves(child)
-        return count
  
 """ C4 Algorithm = ID3 + cost-complexity pruning 
     Cost-complexity: minimize E/n + alpha * |T|, where 
@@ -181,16 +127,25 @@ class Tree:
         alpha is a parameter,
         |T| is the number of leaves in the tree.
 """    
-class C4Algorithm(TreeAlgorithm):
-    def __init__(self, data: pd.DataFrame, criterion: str = "inf_gain", labels_column: int = -1):
+class C45Algorithm(TreeAlgorithm):
+    def __init__(self, 
+                 data: pd.DataFrame, 
+                 criterion: str = "inf_gain", 
+                 labels_column: int = -1,
+                 alpha: float = 0.01):
         super().__init__(data, criterion, labels_column)
-        self.n = len(data)
-        self.alpha = 0.01
+        self.alpha = alpha
         
-        self.leaves = 0
-        self.errors = 0  
+    def _get_number_of_errors(self, node) -> int:
+        if isinstance(node, Leaf):
+            self.leaves += 1
+            self.errors += node.negative
+        else:
+            for child in node.children:
+                self._get_number_of_errors(child)
+        return self.errors
     
-    def _algorithm_c4(self, data, attributes, labels_column, used_attributes=None):
+    def _algorithm_c45(self, data, attributes, labels_column, used_attributes=None, parent=None) -> Node:
         if not used_attributes:
             used_attributes = set()
 
@@ -198,36 +153,162 @@ class C4Algorithm(TreeAlgorithm):
             return None
 
         if len(labels_column.unique()) == 1:
-            return LeafNode(label=labels_column.iloc[0])
+            return Leaf(label=labels_column.iloc[0], 
+                        positive=len(labels_column), 
+                        negative=0, 
+                        parent=parent,
+                        data=data)
 
         if len(attributes.columns) == 0:
-            return LeafNode(label=labels_column.value_counts().idxmax())
+            counts = labels_column.value_counts()
+            max_label = counts.idxmax()
+            return Leaf(label=labels_column.value_counts().idxmax(),
+                        positive=counts[max_label],
+                        negative=counts.sum() - counts[max_label],
+                        parent=parent,
+                        data=data)
 
         available_attributes = set(attributes.columns) - used_attributes
-        best_attribute, best_measure_value = self.criterion.calculate(data, available_attributes)
+        best_attribute, best_measure_value, threshold = self.criterion.calculate(data, available_attributes)
         if not best_attribute:
-            return LeafNode(label=labels_column.value_counts().idxmax())
+            
+            counts = labels_column.value_counts()
+            max_label = counts.idxmax()
+            return Leaf(label=labels_column.value_counts().idxmax(),
+                        positive=counts[max_label],
+                        negative=counts.sum() - counts[max_label],
+                        parent=parent,
+                        data=data)
                 
-        node = InternalNode(attribute=best_attribute)
+        node = InternalNode(attribute=best_attribute, parent=parent, data=data)
         for value in data[best_attribute].unique():
             ids = data.index[data[best_attribute] == value].tolist()
             sub_data = data.loc[ids, :]
             sub_labels_column = sub_data.iloc[:, -1]
             sub_attributes = attributes.drop(best_attribute, axis=1)
             updated_used_attributes = used_attributes.union({best_attribute})
-            child_node = self._algorithm_c4(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes)
+            child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
             child_node.value = value
             node.add_child(child_node)
         return node
-    
-    def execute(self):
-        self.tree = self._algorithm_c4(self.data, self.attributes, self.labels_column)
+
+    def execute(self) -> Tree:
+        self.tree = Tree(self._algorithm_c45(self.data, self.attributes, self.labels_column))
+        
+        # pruner = DecisionTreePruner(self.tree, self.alpha)
+        # pruned_tree = pruner.prune()
+
         return self.tree
+ 
+
+
+class C45AlgorithmCont(TreeAlgorithm):
+    def __init__(self, 
+                 data: pd.DataFrame, 
+                 criterion: str = "inf_gain", 
+                 labels_column: int = -1,
+                 alpha: float = 0.01):
+        super().__init__(data, criterion, labels_column)
+        self.alpha = alpha
+        
+    def _get_number_of_errors(self, node) -> int:
+        if isinstance(node, Leaf):
+            self.leaves += 1
+            self.errors += node.negative
+        else:
+            for child in node.children:
+                self._get_number_of_errors(child)
+        return self.errors
+    
+    def _algorithm_c45(self, data, attributes, labels_column, used_attributes=None, parent=None) -> Node:
+        if not used_attributes:
+            used_attributes = list()
+
+        if len(data) == 0:
+            return None
+
+        if len(labels_column.unique()) == 1:
+            return Leaf(label=labels_column.iloc[0], 
+                        positive=len(labels_column), 
+                        negative=0, 
+                        parent=parent,
+                        data=data)
+
+        if len(attributes.columns) == 0:
+            counts = labels_column.value_counts()
+            max_label = counts.idxmax()
+            return Leaf(label=labels_column.value_counts().idxmax(),
+                        positive=counts[max_label],
+                        negative=counts.sum() - counts[max_label],
+                        parent=parent,
+                        data=data)
+
+        available_attributes = attributes.columns
+        best_attribute, best_measure_value, threshold = self.criterion.calculate(data, available_attributes)
+        if not best_attribute:
+            counts = labels_column.value_counts()
+            max_label = counts.idxmax()
+            return Leaf(label=labels_column.value_counts().idxmax(),
+                        positive=counts[max_label],
+                        negative=counts.sum() - counts[max_label],
+                        parent=parent,
+                        data=data)
+                
+        node = InternalNode(attribute=best_attribute, parent=parent, data=data)
+        print("The node that is being created is: ", best_attribute)
+        if parent:
+            print("The parent of the node is: ", parent.attribute)
+        # The attribute is continuous
+        for x in [0, 1]:
+            # 0 is the left child, < threshold
+            # 1 is the right child, >= threshold
+            ids = data.index[data[best_attribute] < threshold] if x == 0 else data.index[data[best_attribute] >= threshold]
+            print(ids)
+            sub_data = data.loc[ids, :]
+            sub_labels_column = sub_data.iloc[:, -1]
+            print(f"LOOP {x} - The data for the node {best_attribute} is: {sub_data}")
+            if sub_data.empty:
+                counts = labels_column.value_counts()
+                max_label = counts.idxmax()
+                return Leaf(label=labels_column.value_counts().idxmax(),
+                            positive=counts[max_label],
+                            negative=counts.sum() - counts[max_label],
+                            parent=parent,
+                            data=data)
+            sub_attributes = attributes
+            updated_used_attributes = used_attributes.append(best_attribute)
+            
+            child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
+            child_node.value = f"<{threshold:.3f}" if x == 0 else f">= {threshold:.3f}"
+            node.add_child(child_node)
+            print("Added child to the node: ", node.attribute, " with value: ", child_node.value)
+        return node
+
+    def execute(self) -> Tree:
+        self.tree = Tree(self._algorithm_c45(self.data, self.attributes, self.labels_column))
+
+        pruner = DecisionTreePruner(self.tree, self.alpha)
+        pruned_tree = pruner.prune()
+        
+        return pruned_tree
+
+
+
+if __name__ == "__main__":
+    # data = pd.read_csv('data/iris.csv')
+    calculator = InformationGain()
+    # attributes = data.columns.values[:-1]
+
+    data = pd.read_csv('data/iris.csv')
+    c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain")
+    tree = c4_algorithm.execute()
+    tree.visualize()
+    
+    # # traverse the tree to find node with 46 instances
+    # node = tree.root.children[1].children[1]
+    # node_data = node.data
+    # node_data.to_csv("data/node_data.csv", index=False)
+    
+
 
     
-if __name__ == "__main__":
-    data = pd.read_csv('data/attractive.csv')
-    id3 = C4Algorithm(data, criterion="inf_gain")
-    tree = id3.execute()
-    tree_structure = Tree(tree)
-    tree_structure.traverse_dfs()
