@@ -1,5 +1,6 @@
 from graphviz import Digraph
 import uuid
+import numpy as np
 
     # Issues That Affect ID3
     # Bad data: Two identical attributes given different results.
@@ -76,6 +77,15 @@ class Leaf(Node):
         self.positive: int = positive
         self.negative: int = negative
         
+    def get_impurity(self):
+        # calculate the impurity based on entropy
+        labels = self.data.iloc[:, -1]
+        counts = labels.value_counts()
+        total_rows = len(self.data)
+        probabilities = counts / total_rows
+        entropy = -(probabilities * np.log2(probabilities)).sum()
+        return entropy
+        
     def __str__(self, level=0):
         return f"{self.value} {self.label}"
 
@@ -93,6 +103,29 @@ class InternalNode(Node):
     def add_child(self, child):
         child.parent = self
         self.children.append(child)
+        
+    def get_leaves(self):
+        leaves = list()
+        def traverse(node):
+            if isinstance(node, Leaf):
+                leaves.append(node)
+            else:
+                for child in node.children:
+                    traverse(child)
+        traverse(self)
+        return leaves
+        
+    def get_impurity(self):
+        # TODO: Use Strategy Pattern to calculate impurity
+        # calculate the impurity based on entropy
+        labels = self.data.iloc[:, -1]
+        counts = labels.value_counts()
+        total_rows = len(self.data)
+        probabilities = counts / total_rows
+        entropy = -(probabilities * np.log2(probabilities)).sum()
+        return entropy
+    
+        
 
     def __str__(self, level=0):
         return f"{self.attribute}, {self.value}, {self.children}"
@@ -114,6 +147,18 @@ class Tree:
                     traverse(child)
         traverse(self.root)
         return nodes
+    
+    def get_leaves(self) -> list[Node]:
+        if self.leaves is None:
+            self.leaves = list()
+        def traverse(node):
+            if isinstance(node, Leaf):
+                self.leaves.append(node)
+            else:
+                for child in node.children:
+                    traverse(child)
+        traverse(self.root)
+        return self.leaves
     
     def get_number_of_nodes(self):
         return len(self.get_internal_nodes()) + self.count_leaves()
@@ -147,7 +192,14 @@ class Tree:
         for child in node.children:
             count += self.count_leaves(child)
         return count
-    
+
+    def get_number_of_errors(self):
+        errors = 0
+        leaves = self.get_leaves()
+        for leaf in leaves:
+            errors += leaf.negative
+        return errors
+        
     def visualize(self, filename="result"):
         dot = Digraph(comment='Decision Tree')
         

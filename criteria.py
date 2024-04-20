@@ -50,7 +50,7 @@ class InformationGain(AttributeSelectionStrategy):
                 best_inf_gain = inf_gain
                 best_attribute = attribute
                 best_threshold = threshold
-                
+            # print(f"Attribute: {attribute}, Information Gain: {inf_gain}, Threshold: {threshold}")
         if data[best_attribute].dtype == 'float64' or data[best_attribute].dtype == 'int64':
             return best_attribute, best_inf_gain, best_threshold
 
@@ -79,6 +79,10 @@ class InformationGain(AttributeSelectionStrategy):
         sorted_data = data.sort_values(by=attribute_name).reset_index(drop=True)
         n_instances = sorted_data.shape[0]
         
+        # Check if the data on this attribute is the same
+        if sorted_data[attribute_name].nunique() == 1:
+            return attribute_name, 0, None
+        
         overall_entropy = self._get_entropy(data)
         where_labels_change = self._get_places_where_labels_change(data, attribute_name)
         for i in range(where_labels_change.size):
@@ -92,7 +96,6 @@ class InformationGain(AttributeSelectionStrategy):
             if information_gain > best_inf_gain:
                 best_inf_gain = information_gain
                 best_threshold = (sorted_data.iloc[where_labels_change[i]][attribute_name] + sorted_data.iloc[where_labels_change[i] - 1][attribute_name]) / 2
-            # print(f"Threshold: {(sorted_data.iloc[where_labels_change[i]][attribute_name] + sorted_data.iloc[where_labels_change[i] - 1][attribute_name]) / 2}")
         return attribute_name, best_inf_gain, best_threshold
     
     """ Returns the indexes where the labels change in the sorted (ascending) order 
@@ -101,9 +104,13 @@ class InformationGain(AttributeSelectionStrategy):
         The label is assumed to be the last column in the DataFrame."""
     def _get_places_where_labels_change(self, data: pd.DataFrame, attribute_name: str):
         sorted_data = data.sort_values(by=attribute_name)
+        
         sorted_data.reset_index(drop=True, inplace=True)
         where_data_changed = (sorted_data.iloc[:, -1] != sorted_data.iloc[:, -1].shift())
         where_data_changed[0] = False
+        
+        
+        
         
         return where_data_changed[where_data_changed == True].index.values
 
