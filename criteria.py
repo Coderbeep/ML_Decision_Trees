@@ -15,19 +15,6 @@ class AttributeSelectionStrategy():
         raise NotImplementedError
 
 class InformationGain(AttributeSelectionStrategy):
-    # def calculate(self, data: pd.DataFrame, attributes: set) -> tuple[str, float]:
-    #     best_attribute = None
-    #     best_inf_gain = 0
-        
-    #     initial_entropy = self._get_entropy(data)
-    #     for attribute in attributes:
-    #         information_gain = initial_entropy - self._get_split_entropy(data, attribute)
-    #         if information_gain > best_inf_gain:
-    #             best_inf_gain = information_gain
-    #             best_attribute = attribute
-            
-    #     return best_attribute, best_inf_gain
-    
     def calculate(self, data: pd.DataFrame, attributes: set) -> tuple[str, float]:
         best_attribute = None
         best_inf_gain = 0
@@ -56,10 +43,6 @@ class InformationGain(AttributeSelectionStrategy):
 
         return best_attribute, best_inf_gain, None
     
-    # Calculate helper which checks the datatype of the attribute
-    # if float or integer, then calculate the best possible threshold
-    # if not, then calculate the best possible split
-    
     def _calculate_discrete_attribute(self, data: pd.DataFrame, attribute_name: str):
         best_attribute = None
         best_inf_gain = 0
@@ -72,55 +55,50 @@ class InformationGain(AttributeSelectionStrategy):
         
         return best_attribute, best_inf_gain, None
     
-    
     def _calculate_continuous_attribute(self, data: pd.DataFrame, attribute_name: str):
-        best_threshold = None
-        best_inf_gain = 0
-        sorted_data = data.sort_values(by=attribute_name).reset_index(drop=True)
-        n_instances = sorted_data.shape[0]
-        
-        # Check if the data on this attribute is the same
-        if sorted_data[attribute_name].nunique() == 1:
+        if data[attribute_name].nunique() == 1:
             return attribute_name, 0, None
         
-        overall_entropy = self._get_entropy(data)
-        where_labels_change = self._get_places_where_labels_change(data, attribute_name)
+        best_threshold, best_inf_gain = None, 0
+        sorted_indices = np.argsort(data[attribute_name].values)
+        sorted_data = data.iloc[sorted_indices]
+
+        labels = sorted_data.iloc[:, -1].values # Labels as are in the sorted order of the attribute
+
+        n_instances = sorted_data.shape[0]
+
+        overall_entropy = self._get_entropy(labels)
+        where_labels_change = self._get_places_where_labels_change(sorted_data, attribute_name, labels, sorted_indices)
         for i in range(where_labels_change.size):
-            data_left = sorted_data.iloc[:where_labels_change[i]]
-            data_right = sorted_data.iloc[where_labels_change[i]:]
-            
+            index = where_labels_change[i]
+            data_left = labels[:index]
+            data_right = labels[index:]
+
             entropy_left = (data_left.shape[0] / n_instances) * self._get_entropy(data_left)
             entropy_right = (data_right.shape[0] / n_instances) * self._get_entropy(data_right)
 
             information_gain = overall_entropy - (entropy_left + entropy_right)
             if information_gain > best_inf_gain:
                 best_inf_gain = information_gain
-                best_threshold = (sorted_data.iloc[where_labels_change[i]][attribute_name] + sorted_data.iloc[where_labels_change[i] - 1][attribute_name]) / 2
+                best_threshold = (sorted_data.iloc[index][attribute_name] + sorted_data.iloc[index - 1][attribute_name]) / 2
+
         return attribute_name, best_inf_gain, best_threshold
     
     """ Returns the indexes where the labels change in the sorted (ascending) order 
         according to the attribute_name column. 
         
         The label is assumed to be the last column in the DataFrame."""
-    def _get_places_where_labels_change(self, data: pd.DataFrame, attribute_name: str):
-        sorted_data = data.sort_values(by=attribute_name)
-        
-        sorted_data.reset_index(drop=True, inplace=True)
-        where_data_changed = (sorted_data.iloc[:, -1] != sorted_data.iloc[:, -1].shift())
-        where_data_changed[0] = False
-        
-        
-        
-        
-        return where_data_changed[where_data_changed == True].index.values
+    def _get_places_where_labels_change(self, data: pd.DataFrame, attribute_name: str, labels, indices):
+        sorted_indices = np.argsort(data[attribute_name].values)
 
-    def _get_entropy(self, data: pd.DataFrame):
-        total_rows = len(data)
-        # Count unique values in labels column according to the ids
-        labels = data.iloc[:, -1]
-        counts = labels.value_counts()
-        
-        # Calculate entropy
+        sorted_labels = labels
+        where_labels_change = np.where(sorted_labels[:-1] != sorted_labels[1:])[0] + 1
+
+        return sorted_indices[where_labels_change]
+    
+    def _get_entropy(self, num_arr: np.ndarray):
+        total_rows = len(num_arr)
+        _, counts = np.unique(num_arr, return_counts=True)
         probabilities = counts / total_rows
         entropy = -(probabilities * np.log2(probabilities)).sum()
         return entropy

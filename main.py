@@ -2,8 +2,7 @@ import pandas as pd
 from pruner import DecisionTreePruner
 from criteria import InformationGain, InformationGainRatio, GiniIndex, AttributeSelectionStrategy
 from graph import Graph, Tree, InternalNode, Leaf, Node
-import timeit
-import time
+from node_factory import NodeFactory
 
 # TODO: labels as another pd series, passed as additional argument 
 #       to the algorithm class
@@ -62,6 +61,7 @@ class TreeAlgorithm:
 
         self.tree = None
         self.attribute_names = set(self.attributes.columns)
+        self.node_factory = NodeFactory()
 
     def execute(self):
         raise NotImplementedError
@@ -135,81 +135,6 @@ class ID3Algorithm(TreeAlgorithm):
         alpha is a parameter,
         |T| is the number of leaves in the tree.
 """    
-class C45Algorithm(TreeAlgorithm):
-    def __init__(self, 
-                 data: pd.DataFrame, 
-                 criterion: str = "inf_gain", 
-                 labels_column: int = -1,
-                 alpha: float = 0.01):
-        super().__init__(data, criterion, labels_column)
-        self.alpha = alpha
-        
-    def _get_number_of_errors(self, node) -> int:
-        if isinstance(node, Leaf):
-            self.leaves += 1
-            self.errors += node.negative
-        else:
-            for child in node.children:
-                self._get_number_of_errors(child)
-        return self.errors
-    
-    def _algorithm_c45(self, data, attributes, labels_column, used_attributes=None, parent=None) -> Node:
-        if not used_attributes:
-            used_attributes = set()
-
-        if len(data) == 0:
-            return None
-
-        if len(labels_column.unique()) == 1:
-            return Leaf(label=labels_column.iloc[0], 
-                        positive=len(labels_column), 
-                        negative=0, 
-                        parent=parent,
-                        data=data)
-
-        if len(attributes.columns) == 0:
-            counts = labels_column.value_counts()
-            max_label = counts.idxmax()
-            return Leaf(label=labels_column.value_counts().idxmax(),
-                        positive=counts[max_label],
-                        negative=counts.sum() - counts[max_label],
-                        parent=parent,
-                        data=data)
-
-        available_attributes = set(attributes.columns) - used_attributes
-        best_attribute, best_measure_value, threshold = self.criterion.calculate(data, available_attributes)
-        if not best_attribute:
-            
-            counts = labels_column.value_counts()
-            max_label = counts.idxmax()
-            return Leaf(label=labels_column.value_counts().idxmax(),
-                        positive=counts[max_label],
-                        negative=counts.sum() - counts[max_label],
-                        parent=parent,
-                        data=data)
-                
-        node = InternalNode(attribute=best_attribute, parent=parent, data=data)
-        for value in data[best_attribute].unique():
-            ids = data.index[data[best_attribute] == value].tolist()
-            sub_data = data.loc[ids, :]
-            sub_labels_column = sub_data.iloc[:, -1]
-            sub_attributes = attributes.drop(best_attribute, axis=1)
-            updated_used_attributes = used_attributes.union({best_attribute})
-            child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
-            child_node.value = value
-            node.add_child(child_node)
-        return node
-
-    def execute(self) -> Tree:
-        self.tree = Tree(self._algorithm_c45(self.data, self.attributes, self.labels_column))
-        
-        # pruner = DecisionTreePruner(self.tree, self.alpha)
-        # pruned_tree = pruner.prune()
-
-        return self.tree
- 
- 
-TIME = 0
 
 class C45AlgorithmCont(TreeAlgorithm):
     def __init__(self, 
@@ -219,8 +144,6 @@ class C45AlgorithmCont(TreeAlgorithm):
                  alpha: float = 0.01):
         super().__init__(data, criterion, labels_column)
         self.alpha = alpha
-        
-        global TIME
         
     def _get_number_of_errors(self, node) -> int:
         if isinstance(node, Leaf):
@@ -239,55 +162,27 @@ class C45AlgorithmCont(TreeAlgorithm):
             return None
         
         if len(labels_column.unique()) == 1:
-            return Leaf(label=labels_column.iloc[0], 
-                        positive=len(labels_column), 
-                        negative=0, 
-                        parent=parent,
-                        data=data)
+            return self.node_factory.create_leaf(labels_column, parent, data)
 
         if len(attributes.columns) == 0:
-            counts = labels_column.value_counts()
-            max_label = counts.idxmax()
-            return Leaf(label=labels_column.value_counts().idxmax(),
-                        positive=counts[max_label],
-                        negative=counts.sum() - counts[max_label],
-                        parent=parent,
-                        data=data)
+            self.node_factory.create_leaf(labels_column, parent, data)
 
         available_attributes = [x for x in attributes.columns if x not in used_attributes]
-        start = time.time()
         best_attribute, best_measure_value, threshold = self.criterion.calculate(data, available_attributes)
-        end = time.time()
 
         if not best_attribute:
-            counts = labels_column.value_counts()
-            max_label = counts.idxmax()
-            return Leaf(label=labels_column.value_counts().idxmax(),
-                        positive=counts[max_label],
-                        negative=counts.sum() - counts[max_label],
-                        parent=parent,
-                        data=data)
+            return self.node_factory.create_leaf(labels_column, parent, data)
                 
         node = InternalNode(attribute=best_attribute, parent=parent, data=data)
 
         for x in [0, 1]:
-            # 0 is the left child, < threshold
-            # 1 is the right child, >= threshold
             ids = data.index[data[best_attribute] <= threshold] if x == 0 else data.index[data[best_attribute] > threshold]
             sub_data = data.loc[ids, :]
             sub_labels_column = sub_data.iloc[:, -1]
-            if sub_data.empty: # check another way (break if the length of sub_data is the length of data)
-                counts = labels_column.value_counts()
-                max_label = counts.idxmax()
-                return Leaf(label=labels_column.value_counts().idxmax(),
-                            positive=counts[max_label],
-                            negative=counts.sum() - counts[max_label],
-                            parent=parent,
-                            data=data)
             sub_attributes = attributes
             updated_used_attributes = used_attributes.append(best_attribute)
             child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
-            child_node.value = f"<{threshold:.3f}" if x == 0 else f">= {threshold:.3f}"
+            child_node.value = f"<={threshold:.3f}" if x == 0 else f"> {threshold:.3f}"
             node.add_child(child_node)
         return node
 
@@ -305,24 +200,34 @@ def visualize_error_with_alpha(data):
     alpha = 0.001
     errors = []
     c45_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=alpha)
-    while alpha < 1:
+    while alpha < 0.2:
         tree = c45_algorithm.execute()
         c45_algorithm.alpha = alpha
         errors.append(tree.get_number_of_errors())
         print(alpha, errors[-1])
-        alpha += 0.002
+        alpha += 0.0001
         
     plt.plot(errors)
     plt.show()
 
 def test_c45_algorithm():
     data = pd.read_csv('data/iris.csv')
-    c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=0.08)
+    c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=0)
     tree = c4_algorithm.execute()
-    # tree.visualize()
-    
+    tree.visualize()
+
+# TEST SETTINGS
+# - DATASET: iris.csv
+# - CRITERION: Information Gain
+# - ALPHA: 0.08
+
 # Initially ~ 2.4 seconds for 5 executions
+# Vectorization in numpy ~ 0.7 seconds for 5 executions
+# Entropy calc on labels only ~ 0.6 seconds for 5 executions
+# Numpy on labels change ~ 0.5 seconds for 5 executions
 
 if __name__ == "__main__":
-    execution_time = timeit.timeit(test_c45_algorithm, number=5)
-    print(f"Execution time: {execution_time} seconds")
+    # execution_time = timeit.timeit(test_c45_algorithm, number=5)
+    # print(f"Execution time: {execution_time:.3f} seconds")
+    # visualize_error_with_alpha(pd.read_csv('data/iris.csv'))
+    test_c45_algorithm()
