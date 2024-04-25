@@ -175,15 +175,26 @@ class C45AlgorithmCont(TreeAlgorithm):
                 
         node = InternalNode(attribute=best_attribute, parent=parent, data=data)
 
-        for x in [0, 1]:
-            ids = data.index[data[best_attribute] <= threshold] if x == 0 else data.index[data[best_attribute] > threshold]
-            sub_data = data.loc[ids, :]
-            sub_labels_column = sub_data.iloc[:, -1]
-            sub_attributes = attributes
-            updated_used_attributes = used_attributes.append(best_attribute)
-            child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
-            child_node.value = f"<={threshold:.3f}" if x == 0 else f"> {threshold:.3f}"
-            node.add_child(child_node)
+        if threshold:
+            for x in [0, 1]:
+                ids = data.index[data[best_attribute] <= threshold] if x == 0 else data.index[data[best_attribute] > threshold]
+                sub_data = data.loc[ids, :]
+                sub_labels_column = sub_data.iloc[:, -1]
+                sub_attributes = attributes
+                updated_used_attributes = used_attributes.append(best_attribute)
+                child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
+                child_node.value = f"<={threshold:.3f}" if x == 0 else f"> {threshold:.3f}"
+                node.add_child(child_node)
+        else:
+            for value in data[best_attribute].unique():
+                ids = data.index[data[best_attribute] == value].tolist()
+                sub_data = data.loc[ids, :]
+                sub_labels_column = sub_data.iloc[:, -1]
+                sub_attributes = attributes.drop(best_attribute, axis=1)
+                updated_used_attributes = used_attributes + [best_attribute]
+                child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
+                child_node.value = value
+                node.add_child(child_node)
         return node
 
     def execute(self) -> Tree:
@@ -211,7 +222,7 @@ def visualize_error_with_alpha(data):
     plt.show()
 
 def test_c45_algorithm():
-    data = pd.read_csv('data/iris.csv')
+    data = pd.read_csv('data/data.csv')
     c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=0)
     tree = c4_algorithm.execute()
     tree.visualize()

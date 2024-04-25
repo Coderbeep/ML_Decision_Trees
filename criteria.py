@@ -46,8 +46,9 @@ class InformationGain(AttributeSelectionStrategy):
     def _calculate_discrete_attribute(self, data: pd.DataFrame, attribute_name: str):
         best_attribute = None
         best_inf_gain = 0
+        labels = data.iloc[:, -1].values
         
-        initial_entropy = self._get_entropy(data)
+        initial_entropy = self._get_entropy(labels)
         information_gain = initial_entropy - self._get_split_entropy(data, attribute_name)
         if information_gain > best_inf_gain:
             best_inf_gain = information_gain
