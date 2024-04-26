@@ -4,6 +4,7 @@ from criteria import InformationGain, InformationGainRatio, GiniIndex, Attribute
 from graph import Graph, Tree, InternalNode, Leaf, Node
 from node_factory import NodeFactory
 import numpy as np
+from rules import Rules
 
 # TODO: labels as another pd series, passed as additional argument 
 #       to the algorithm class
@@ -224,73 +225,17 @@ def visualize_error_with_alpha(data):
 
 def test_c45_algorithm():
     data = pd.read_csv('data/iris.csv')
-    c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=0.055)
+    c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=0.08)
     tree = c4_algorithm.execute()
     tree.visualize()
     
     return tree
 
-# TEST SETTINGS
-# - DATASET: iris.csv
-# - CRITERION: Information Gain
-# - ALPHA: 0.08
-
-# Initially ~ 2.4 seconds for 5 executions
-# Vectorization in numpy ~ 0.7 seconds for 5 executions
-# Entropy calc on labels only ~ 0.6 seconds for 5 executions
-# Numpy on labels change ~ 0.5 seconds for 5 executions
-
-def parse_rule(rule):
-    attribute, condition = rule.split("_")
-    if condition.startswith("<="):
-        return attribute, "<=", float(condition[2:])
-    elif condition.startswith("<"):
-        return attribute, "<", float(condition[1:])
-    elif condition.startswith(">="):
-        return attribute, ">=", float(condition[2:])
-    elif condition.startswith(">"):
-        return attribute, ">", float(condition[1:])
-    else:
-        return attribute, "==", condition
-    
-
-def get_rules():
-    tree = test_c45_algorithm()
-    
-    atomic_rules = tree.fetch_atomic_rules()
-    rules = tree.fetch_rules()
-    
-    df = pd.read_csv('data/iris.csv')
-    
-    fulfillment_df = pd.DataFrame(columns=atomic_rules)
-
-
-    for rule in atomic_rules:
-        attr, operator, value = parse_rule(rule)
-        if operator == "=":
-            fulfillment_df[rule] = (df[attr] == value).astype(int)
-        elif operator == "<":
-            fulfillment_df[rule] = (df[attr] < value).astype(int)
-        elif operator == "<=":
-            fulfillment_df[rule] = (df[attr] <= value).astype(int)
-        elif operator == ">":
-            fulfillment_df[rule] = (df[attr] > value).astype(int)
-        elif operator == ">=":
-            fulfillment_df[rule] = (df[attr] >= value).astype(int)
-    
-    fulfillment_df['label'] = df['variety']
-
-    return fulfillment_df, rules, atomic_rules
-
-def get_wrong_indices(tree):
-    leaves = tree.get_leaves()
-    for leaf in leaves:
-        if len(leaf.data) == 46:
-            print(leaf.data.head(5))
-
 if __name__ == "__main__":
     # execution_time = timeit.timeit(test_c45_algorithm, number=5)
     # print(f"Execution time: {execution_time:.3f} seconds")
     # visualize_error_with_alpha(pd.read_csv('data/iris.csv'))
-    get_rules()
-    print(get_wrong_indices(test_c45_algorithm()))
+    rules = Rules(test_c45_algorithm())
+    # print(rules.get_wrong_indices())
+    print(rules.get_ruled_dataset(pd.read_csv('data/iris.csv')))
+    print(rules.rules)
