@@ -228,4 +228,39 @@ class Tree:
 
         dot = add_nodes_edges(self.root, dot)
         dot.render(filename, format='png', cleanup=True)
+        
+    # def get_rules(self):
+    #     rules = list()
+    #     def traverse(node, rule):
+    #         if isinstance(node, Leaf):
+    #             rules.append(rule)
+    #         else:
+    #             for child in node.children:
+    #                 new_rule = rule + f" {node.attribute} = {child.value}"
+    #                 traverse(child, new_rule)
+    #     traverse(self.root, "")
+    #     return rules
+    
+    """ Create a dataframe with the rules of the tree """
+    def fetch_atomic_rules(self):
+        rules = set()
+        def traverse(node):
+            if not isinstance(node, Leaf):
+                for child in node.children:
+                    rules.add(f"{node.attribute}_{child.value}")
+                    traverse(child)
+        traverse(self.root)
+        return sorted(list(rules))
+    
+    def fetch_rules(self):
+        rules = list()
+        def traverse(node, rule):
+            if isinstance(node, Leaf):
+                rules.append(rule.split())
+            else:
+                for child in node.children:
+                    new_rule = rule + f"{node.attribute}_{child.value} "
+                    traverse(child, new_rule)
+        traverse(self.root, "")
+        return rules
 

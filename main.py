@@ -3,6 +3,7 @@ from pruner import DecisionTreePruner
 from criteria import InformationGain, InformationGainRatio, GiniIndex, AttributeSelectionStrategy
 from graph import Graph, Tree, InternalNode, Leaf, Node
 from node_factory import NodeFactory
+import numpy as np
 
 # TODO: labels as another pd series, passed as additional argument 
 #       to the algorithm class
@@ -183,7 +184,7 @@ class C45AlgorithmCont(TreeAlgorithm):
                 sub_attributes = attributes
                 updated_used_attributes = used_attributes.append(best_attribute)
                 child_node = self._algorithm_c45(sub_data, sub_attributes, sub_labels_column, used_attributes=updated_used_attributes, parent=node)
-                child_node.value = f"<={threshold:.3f}" if x == 0 else f"> {threshold:.3f}"
+                child_node.value = f"<={threshold:.3f}" if x == 0 else f">{threshold:.3f}"
                 node.add_child(child_node)
         else:
             for value in data[best_attribute].unique():
@@ -222,10 +223,12 @@ def visualize_error_with_alpha(data):
     plt.show()
 
 def test_c45_algorithm():
-    data = pd.read_csv('data/data.csv')
-    c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=0)
+    data = pd.read_csv('data/iris.csv')
+    c4_algorithm = C45AlgorithmCont(data, criterion="inf_gain", alpha=0.055)
     tree = c4_algorithm.execute()
     tree.visualize()
+    
+    return tree
 
 # TEST SETTINGS
 # - DATASET: iris.csv
@@ -237,8 +240,57 @@ def test_c45_algorithm():
 # Entropy calc on labels only ~ 0.6 seconds for 5 executions
 # Numpy on labels change ~ 0.5 seconds for 5 executions
 
+def parse_rule(rule):
+    attribute, condition = rule.split("_")
+    if condition.startswith("<="):
+        return attribute, "<=", float(condition[2:])
+    elif condition.startswith("<"):
+        return attribute, "<", float(condition[1:])
+    elif condition.startswith(">="):
+        return attribute, ">=", float(condition[2:])
+    elif condition.startswith(">"):
+        return attribute, ">", float(condition[1:])
+    else:
+        return attribute, "==", condition
+    
+
+def get_rules():
+    tree = test_c45_algorithm()
+    
+    atomic_rules = tree.fetch_atomic_rules()
+    rules = tree.fetch_rules()
+    
+    df = pd.read_csv('data/iris.csv')
+    
+    fulfillment_df = pd.DataFrame(columns=atomic_rules)
+
+
+    for rule in atomic_rules:
+        attr, operator, value = parse_rule(rule)
+        if operator == "=":
+            fulfillment_df[rule] = (df[attr] == value).astype(int)
+        elif operator == "<":
+            fulfillment_df[rule] = (df[attr] < value).astype(int)
+        elif operator == "<=":
+            fulfillment_df[rule] = (df[attr] <= value).astype(int)
+        elif operator == ">":
+            fulfillment_df[rule] = (df[attr] > value).astype(int)
+        elif operator == ">=":
+            fulfillment_df[rule] = (df[attr] >= value).astype(int)
+    
+    fulfillment_df['label'] = df['variety']
+
+    return fulfillment_df, rules, atomic_rules
+
+def get_wrong_indices(tree):
+    leaves = tree.get_leaves()
+    for leaf in leaves:
+        if len(leaf.data) == 46:
+            print(leaf.data.head(5))
+
 if __name__ == "__main__":
     # execution_time = timeit.timeit(test_c45_algorithm, number=5)
     # print(f"Execution time: {execution_time:.3f} seconds")
     # visualize_error_with_alpha(pd.read_csv('data/iris.csv'))
-    test_c45_algorithm()
+    get_rules()
+    print(get_wrong_indices(test_c45_algorithm()))
